@@ -1,0 +1,7 @@
+# DVF project config (optional – use from scripts/notebooks with PyYAML or dotenv)
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+load:
+  encoding: utf-8
+  sep: "|"  # official DVF format
