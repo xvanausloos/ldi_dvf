@@ -15,7 +15,6 @@ build/
 # Data: ignore contents of raw (large DVF files), keep .gitkeep
 data/raw/*
 !data/raw/.gitkeep
-data/processed/*
 !data/processed/.gitkeep
 
 # IDE / OS
@@ -32,5 +31,3 @@ data/processed/*
 .pytest_cache/
 .coverage
 htmlcov/
-
-/data/raw/
