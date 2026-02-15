@@ -48,3 +48,4 @@ config/defaults.yaml  # Paths, encoding (utf-8), separator ("|")
 - **Line length**: 100 (ruff config in pyproject.toml)
 - **Build backend**: hatchling
 - **Source layout**: `src/dvf/` (configured as pythonpath in pytest)
+- **Comments**: Use comments sparingly. Only add comments where the logic isn't self-evident.
