@@ -12,10 +12,15 @@ build/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Data: ignore contents of raw (large DVF files), keep .gitkeep
+# Data: ignore all data/ contents, keep .gitkeep files
 data/raw/*
+data/processed/*
+data/models/*
+data/results/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/models/.gitkeep
+!data/results/.gitkeep
 
 # IDE / OS
 .idea/
