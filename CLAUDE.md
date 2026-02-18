@@ -17,6 +17,7 @@ uv run ruff check .              # Lint
 uv run ruff format .             # Format
 uv run jupyter lab               # Launch JupyterLab for notebooks
 uv run python scripts/download_dvf_sample.py  # Download DVF data
+uv run streamlit run app.py      # Launch chat interface for querying DVF data
 ```
 
 ## Architecture
@@ -25,6 +26,9 @@ uv run python scripts/download_dvf_sample.py  # Download DVF data
 src/dvf/          # Reusable Python package
   load.py         # load_dvf_raw() (pipe-sep), load_dvf_csv(), load_dvf_plus() (enriched DVF+)
   analyze.py      # summarize_mutations(), price_stats()
+  query.py        # QueryParser, QueryExecutor for natural language queries
+
+app.py            # Streamlit chat interface for querying DVF data
 
 notebooks/        # Sequential analysis pipeline (01-06)
   01: Ensues house exploration
