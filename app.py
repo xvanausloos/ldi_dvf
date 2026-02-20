@@ -122,8 +122,8 @@ def main():
                     except Exception as e:
                         logger.warning(f"Failed to initialize RAG system: {e}")
                         st.session_state.rag_available = False
-                else:
-                    st.session_state.rag_available = False
+            else:
+                st.session_state.rag_available = False
             else:
                 st.session_state.rag_available = False
 

@@ -427,19 +427,18 @@ class QueryExecutor:
 
     def generate_sql(self, params: dict[str, Any]) -> str:
         """Generate equivalent SQL query from parameters.
-        
+
         Note: This generates SQL-like syntax. Actual execution uses pandas DataFrame operations.
         Column names with spaces are quoted for SQL compatibility.
         """
         query_type = params.get("query_type", "mean")
-        
+
         # Determine SELECT clause
         if query_type == "count":
             select_clause = "COUNT(*) AS value"
         elif query_type == "mean":
             select_clause = "AVG(last_price) AS value"
         elif query_type == "median":
-            # Note: PERCENTILE_CONT is PostgreSQL/ANSI SQL. For other DBs, use APPROX_PERCENTILE or similar
             select_clause = "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY last_price) AS value"
         elif query_type == "min":
             select_clause = "MIN(last_price) AS value"
@@ -450,27 +449,19 @@ class QueryExecutor:
 
         # Build WHERE conditions (quote column names with spaces)
         conditions = ['"Type local" = \'Maison\'']
-        
+
         if params.get("postal_code"):
             conditions.append(f'"Code postal" = \'{params["postal_code"]}\'')
-        
         if params.get("commune"):
-            # Escape single quotes in commune name
             commune_escaped = params["commune"].replace("'", "''")
             conditions.append(f'UPPER("Commune") LIKE UPPER(\'%{commune_escaped}%\')')
-        
         if params.get("surface_min") is not None:
             conditions.append(f'"Surface reelle bati" >= {params["surface_min"]}')
-        
         if params.get("surface_max") is not None:
             conditions.append(f'"Surface reelle bati" <= {params["surface_max"]}')
-        
         conditions.append("last_price IS NOT NULL")
-        
         where_clause = " AND ".join(conditions)
-        
         sql = f"""SELECT {select_clause}
 FROM dvf_properties
 WHERE {where_clause};"""
-        
         return sql
