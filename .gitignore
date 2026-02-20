@@ -17,6 +17,8 @@ data/raw/*
 data/processed/*
 data/models/*
 data/results/*
+data/vectorstore/
+data/vectorstore_ensues/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/models/.gitkeep
