@@ -13,7 +13,6 @@ build/
 *.ipynb_checkpoints
 
 # Data: ignore all data/ contents, keep .gitkeep files
-# Data: ignore all data/ contents, keep .gitkeep files
 data/raw/*
 data/processed/*
 data/models/*
@@ -22,8 +21,6 @@ data/vectorstore/
 data/vectorstore_ensues/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
-!data/models/.gitkeep
-!data/results/.gitkeep
 !data/models/.gitkeep
 !data/results/.gitkeep
 
