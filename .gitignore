@@ -38,3 +38,5 @@ data/vectorstore_ensues/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# xav's comments
