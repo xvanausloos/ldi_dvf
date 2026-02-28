@@ -53,3 +53,5 @@ config/defaults.yaml  # Paths, encoding (utf-8), separator ("|")
 - **Build backend**: hatchling
 - **Source layout**: `src/dvf/` (configured as pythonpath in pytest)
 - **Comments**: Use comments sparingly. Only add comments where the logic isn't self-evident.
+
+# ignore this comment
