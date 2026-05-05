@@ -39,6 +39,8 @@ else:
 DATA_PATH = Path(__file__).parent / "data" / "processed" / "df_grouped_2020_2025_france_cleaned.csv"
 RAG_DATA_PATH = Path(__file__).parent / "data" / "processed" / "df_2020_2025_houses_ensues.csv"
 
+FOOTER_CREDIT = "Xavier VAN AUSLOOS, La Donnée Intelligente, April 2026"
+
 
 @st.cache_data
 def load_data():
@@ -329,6 +331,9 @@ def main():
 
             st.session_state.messages.append(message_to_add)
             st.rerun()
+
+    st.divider()
+    st.caption(FOOTER_CREDIT)
 
 
 if __name__ == "__main__":
