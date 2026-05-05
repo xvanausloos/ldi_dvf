@@ -56,77 +56,79 @@ ldi_dvf/
 
 3. **Notebooks**: From the **project root**, run `uv run jupyter lab` and open `notebooks/`. The notebook adds the project `src` to the path so `dvf` is found whether the kernel cwd is the project root or the `notebooks/` folder.
 
-## Chat Interface (Streamlit)
+## Chat interface (Streamlit)
 
-The project includes a natural language chat interface for querying DVF data interactively.
+The Streamlit app (`app.py`) offers two sidebar modes:
 
-### Running the Chat App
+| Mode | Data scope | Typical use |
+|------|----------------|-------------|
+| **Structured query** | France-wide grouped houses (`df_grouped_2020_2025_france_cleaned.csv`) | Count / mean / median / min / max prices with postal code, commune, surface filters |
+| **RAG (natural language)** | **Ensues-la-Redonne houses only** — postal code **13820** (`df_2020_2025_houses_ensues.csv` + Chroma index) | Semantic Q&A (“cheap houses”, “large villas”, themes not mapped to strict filters) |
+
+RAG answers only reflect whatever was indexed into `data/vectorstore_ensues/`. Structured queries run over the full France file (including Ensues rows).
+
+### Setup
+
+1. **Dependencies** (includes Streamlit, OpenAI, ChromaDB):
+
+   ```bash
+   uv sync
+   ```
+
+2. **Structured mode — France dataset**
+
+   - Path: `data/processed/df_grouped_2020_2025_france_cleaned.csv`
+   - Produced by the cleaning pipeline (e.g. `notebooks/03_dvf_clean_duplicates_houses.ipynb`).
+   - Processed CSVs often store **`Code postal` as numbers** (e.g. `13820.0`). The query layer compares numerically so filters like `13820` still match.
+
+3. **RAG mode — Ensues-only subset**
+
+   - Tabular slice: `data/processed/df_2020_2025_houses_ensues.csv`  
+     (houses in Ensues-la-Redonne / CP 13820; build via pipeline such as `notebooks/07_dvf_ensues_vector.ipynb`).
+   - Vector index (required for RAG): build into `data/vectorstore_ensues/`:
+
+     ```bash
+     export OPENAI_API_KEY=...   # required for embeddings
+     uv run python scripts/build_vectorstore.py -n 253   # full Ensues slice (~253 rows); omit -n only after confirming cost/time
+     ```
+
+   The app enables RAG only if that CSV exists **and** `data/vectorstore_ensues/` contains a persisted Chroma DB (not just `.gitkeep`).
+
+   If RAG answers omit prices after a code update, **rebuild** the vector store so each chunk includes parsed mutation amounts (clear `data/vectorstore_ensues/*` except dotfiles like `.gitkeep` if you use it, then run the command above). Details: `RAG_README.md`.
+
+4. **API key**
+
+   - Set `OPENAI_API_KEY` in the environment or project-root `.env` (see `.env.example`).
+   - Used for: optional structured-query parsing (LLM), RAG embeddings + generation. Without a key, structured mode falls back to regex parsing; RAG stays disabled until embeddings have been built (they still required a key at build time).
+
+### Run
 
 ```bash
-# Make sure dependencies are installed
-uv sync
-
-# Launch the Streamlit app
 uv run streamlit run app.py
 ```
 
-The app will open in your browser at `http://localhost:8501`.
+Open `http://localhost:8501`.
 
-### Features
+### Example prompts
 
-- **LLM-Powered Query Parsing**: Uses OpenAI GPT models to understand natural language queries with improved accuracy
-- **Regex Fallback**: Automatically falls back to regex-based parsing if LLM is unavailable
-- **Natural Language Queries**: Ask questions in plain English/French about real estate data
-- **Example Queries**: Click example buttons in the sidebar to try common queries
-- **Chat History**: View your conversation history with previous queries and results
-- **Reset Button**: Clear chat history using the "Clear Chat History" button in the sidebar
-- **LLM Configuration**: Toggle LLM usage and select model in the sidebar settings
+**Structured (France)**
 
-### Example Queries
+- “What is the mean price of a 100m² house in 13820 Ensues?”
+- “How many houses are in Marseille?”
+- “What is the median price of houses in Paris?”
 
-- "What is the mean price of a 100m² house in 13820 Ensues?"
-- "How many houses are in Marseille?"
-- "What is the median price of houses in Paris?"
-- "What is the average price of a 80m² house in 75001?"
+**RAG (Ensues houses only)**
 
-### Query Capabilities
+- “What are the most expensive houses in Ensues-la-Redonne?”
+- “Quelles sont les maisons les moins chères à Ensues?”
 
-The chat interface can extract and filter by:
-- **Postal codes** (e.g., "13820", "75001")
-- **Commune names** (e.g., "Ensues", "Marseille", "Paris")
-- **Surface area** (e.g., "100m²", "80m2")
-- **Query types**: mean, median, count, min, max prices
+Use Ensues-related wording in RAG; Paris-only questions are outside the indexed corpus.
 
-Results include:
-- Mean/median/min/max prices or property counts
-- Number of matching properties
-- Average price per m²
-- Average surface area
+### Behaviour summary
 
-### Requirements
+Structured mode extracts **postal code**, **commune** (substring match on official commune labels), **surface** (±10%), and **query type** (mean, median, count, min, max). Results include counts, aggregates, average €/m² and average surface where prices exist.
 
-- The cleaned dataset must be available at `data/processed/df_grouped_2020_2025_france_cleaned.csv`
-- This file is generated by the data cleaning pipeline in `notebooks/03_dvf_clean_duplicates_houses.ipynb`
-
-### LLM Configuration (Optional)
-
-The app uses OpenAI's GPT models for enhanced query understanding. To enable LLM parsing:
-
-1. **Get an OpenAI API key**: Sign up at [platform.openai.com](https://platform.openai.com/api-keys) and create an API key
-
-2. **Set the API key**:
-   ```bash
-   # Option 1: Environment variable
-   export OPENAI_API_KEY=your_api_key_here
-   
-   # Option 2: Create a .env file (recommended)
-   cp .env.example .env
-   # Then edit .env and add your API key
-   ```
-
-3. **Launch the app**: The LLM will be used automatically if the API key is configured. You can toggle LLM usage in the sidebar.
-
-**Note**: If no API key is configured, the app automatically falls back to regex-based parsing, which works for most common queries but may be less accurate for complex or ambiguous queries.
+More detail on RAG indexing and troubleshooting: `RAG_README.md`.
 
 ## Commands
 

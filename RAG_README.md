@@ -34,6 +34,14 @@ uv run python scripts/build_vectorstore.py
 
 The vector store is saved to `data/vectorstore_ensues/` (Ensues houses only).
 
+Indexed documents embed human-readable property text built from each row (including **mutation dates and prices**). If you upgraded RAG code and answers omit prices, **rebuild** the vector store so chunks include the new fields:
+
+```bash
+# Remove old Chroma data for Ensues (optional but avoids stale docs), then rebuild:
+rm -rf data/vectorstore_ensues/*
+uv run python scripts/build_vectorstore.py -n 253
+```
+
 ### 3. Configure API Key
 
 Make sure `OPENAI_API_KEY` is set in your `.env` file:
@@ -53,11 +61,11 @@ OPENAI_API_KEY=your_key_here
 
 2. In the sidebar, select **"RAG (Natural Language)"** query mode
 
-3. Ask questions in English or French:
-   - "Quelles sont les maisons les moins chères à Paris?"
-   - "Find me houses with garden in Marseille"
-   - "What are the most expensive properties in Ensues?"
-   - "Combien coûte en moyenne une maison de 100m²?"
+3. Ask questions in English or French (corpus is **Ensues houses only**, CP 13820):
+   - "What are the cheapest houses in Ensues-la-Redonne?"
+   - "What was the last transaction price for houses near the coast?"
+   - "Compare expensive vs affordable houses in Ensues"
+   - "Combien coûte en moyenne une maison de 100m² à Ensues?"
 
 ### Python API
 

@@ -97,6 +97,17 @@ def extract_commune(text: str) -> str | None:
     return None
 
 
+def match_postal_code_column(series: pd.Series, postal_code: str | int | float | None) -> pd.Series:
+    """Match postal codes when CSV stores floats (e.g. 13820.0) while queries use five-digit strings."""
+    if postal_code is None:
+        return pd.Series(True, index=series.index)
+    target = pd.to_numeric(str(postal_code).strip(), errors="coerce")
+    if pd.notna(target):
+        col = pd.to_numeric(series, errors="coerce")
+        return col == int(target)
+    return series.astype(str) == str(postal_code)
+
+
 def extract_query_type(text: str) -> str:
     """Extract query type (mean, median, count, etc.) from text."""
     text_lower = text.lower()
@@ -157,7 +168,7 @@ Key Columns:
     semantic_layer += """
 Query Processing Rules:
 - Always filter by "Type local" = 'Maison' (house)
-- Postal codes are 5-digit strings (e.g., "13820", not 13820)
+- Postal codes may appear as floats in the CSV (13820.0); user queries still use five digits (13820)
 - Commune names are case-insensitive but preserve original capitalization
 - Surface is in square meters (m²)
 - Prices are in euros (€)
@@ -358,7 +369,7 @@ class QueryExecutor:
 
         if params.get("postal_code"):
             filtered = filtered[
-                filtered["Code postal"].astype(str) == str(params["postal_code"])
+                match_postal_code_column(filtered["Code postal"], params["postal_code"])
             ]
 
         if params.get("commune"):
@@ -451,7 +462,13 @@ class QueryExecutor:
         conditions = ['"Type local" = \'Maison\'']
 
         if params.get("postal_code"):
-            conditions.append(f'"Code postal" = \'{params["postal_code"]}\'')
+            pc = str(params["postal_code"]).strip()
+            try:
+                pc_int = int(pc)
+                conditions.append(f'ABS(CAST("Code postal" AS REAL) - {pc_int}) < 1e-6')
+            except ValueError:
+                pc_escaped = pc.replace("'", "''")
+                conditions.append(f'"Code postal" = \'{pc_escaped}\'')
         if params.get("commune"):
             commune_escaped = params["commune"].replace("'", "''")
             conditions.append(f'UPPER("Commune") LIKE UPPER(\'%{commune_escaped}%\')')

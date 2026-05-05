@@ -207,10 +207,10 @@ def main():
         st.header("💡 Example Queries")
         if use_rag:
             examples = [
-                "Quelles sont les maisons les moins chères à Paris?",
-                "Trouve-moi des maisons avec jardin à Marseille",
-                "What are the most expensive houses in Ensues?",
-                "Combien coûte en moyenne une maison de 100m²?",
+                "What are the most expensive houses in Ensues-la-Redonne?",
+                "Quelles sont les maisons les moins chères à Ensues?",
+                "Montre-moi des maisons autour de 100 m² à Ensues",
+                "Combien coûte en moyenne une grande maison à Ensues?",
             ]
         else:
             examples = [

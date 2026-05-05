@@ -1,10 +1,10 @@
 """RAG (Retrieval-Augmented Generation) system for DVF dataset queries."""
 
 import ast
-import json
 import logging
 import os
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,37 @@ env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path)
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_price_raw(price_raw: Any) -> float | None:
+    """Parse mutation price from CSV (often European string \"120000,00\")."""
+    if price_raw is None or isinstance(price_raw, bool):
+        return None
+    if isinstance(price_raw, str):
+        s = (
+            price_raw.strip()
+            .replace("\u202f", "")
+            .replace(" ", "")
+            .replace(",", ".")
+        )
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    try:
+        x = float(price_raw)
+    except (TypeError, ValueError):
+        return None
+    if np.isnan(x):
+        return None
+    return x
+
+
+def _mutation_sort_key(date_str: str) -> datetime:
+    try:
+        return datetime.strptime(date_str, "%d/%m/%Y")
+    except ValueError:
+        return datetime.min
 
 
 class DVFVectorStore:
@@ -80,29 +111,55 @@ class DVFVectorStore:
             parts.append(f"Pieces: {row['Nombre pieces principales']:.0f}")
         if pd.notna(row.get("Voie")):
             parts.append(f"Adresse: {row['Voie']}")
+
+        price_added = False
         if pd.notna(row.get("mutations")):
             try:
-                import ast
                 mutations_str = row["mutations"]
                 if isinstance(mutations_str, str):
                     mutations = ast.literal_eval(mutations_str)
                 else:
                     mutations = mutations_str
-                    
-                if mutations and len(mutations) > 0:
-                    if isinstance(mutations, list) and len(mutations) > 0:
-                        last_mutation = mutations[-1]
-                    elif isinstance(mutations, dict):
-                        last_mutation = list(mutations.values())[-1]
-                    else:
-                        last_mutation = None
-                        
-                    if isinstance(last_mutation, dict):
-                        price = list(last_mutation.values())[0]
-                        if isinstance(price, (int, float)):
-                            parts.append(f"Dernier prix: {price:,.0f} €")
-            except Exception:
-                pass
+
+                last_date: str | None = None
+                last_amount: float | None = None
+
+                if isinstance(mutations, list):
+                    for block in mutations:
+                        if not isinstance(block, dict):
+                            continue
+                        for date_str, price_raw in block.items():
+                            amt = _parse_price_raw(price_raw)
+                            if amt is None:
+                                continue
+                            if last_date is None or _mutation_sort_key(
+                                date_str
+                            ) >= _mutation_sort_key(last_date):
+                                last_date = date_str
+                                last_amount = amt
+                elif isinstance(mutations, dict):
+                    for date_str, price_raw in mutations.items():
+                        amt = _parse_price_raw(price_raw)
+                        if amt is None:
+                            continue
+                        if last_date is None or _mutation_sort_key(
+                            date_str
+                        ) >= _mutation_sort_key(last_date):
+                            last_date = date_str
+                            last_amount = amt
+
+                if last_date is not None and last_amount is not None:
+                    parts.append(
+                        f"Dernière mutation ({last_date}), dernier prix: {last_amount:.0f} €"
+                    )
+                    price_added = True
+            except (SyntaxError, ValueError, TypeError) as e:
+                logger.debug("Could not parse mutations for RAG text: %s", e)
+
+        if not price_added and pd.notna(row.get("last_price")):
+            lp = _parse_price_raw(row["last_price"])
+            if lp is not None:
+                parts.append(f"Dernier prix: {lp:.0f} €")
 
         return ". ".join(parts)
 
@@ -317,6 +374,8 @@ class DVFRAGSystem:
         # Generate answer using LLM
         system_prompt_en = """You are a helpful assistant answering questions about French real estate data (DVF - Demandes de Valeurs Foncières).
 
+Each property snippet may include transaction dates and amounts such as \"Dernière mutation (DD/MM/YYYY), dernier prix: N €\" or \"Dernier prix: N €\". Treat those numbers as last transaction prices in euros.
+
 Use the provided context about properties to answer the user's question accurately. If the context doesn't contain enough information, say so.
 
 Format your response clearly with:
@@ -327,6 +386,8 @@ Format your response clearly with:
 Be concise but informative."""
 
         system_prompt_fr = """Vous êtes un assistant utile qui répond aux questions sur les données immobilières françaises (DVF - Demandes de Valeurs Foncières).
+
+Chaque extrait peut indiquer une date et un montant : « Dernière mutation (JJ/MM/AAAA), dernier prix: N € » ou « Dernier prix: N € ». Ces montants sont les derniers prix de mutation en euros.
 
 Utilisez le contexte fourni sur les propriétés pour répondre précisément à la question de l'utilisateur. Si le contexte ne contient pas assez d'informations, dites-le.
 
