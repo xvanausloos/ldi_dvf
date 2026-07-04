@@ -63,9 +63,9 @@ The Streamlit app (`app.py`) offers two sidebar modes:
 | Mode | Data scope | Typical use |
 |------|----------------|-------------|
 | **Structured query** | France-wide grouped houses (`df_grouped_2020_2025_france_cleaned.csv`) | Count / mean / median / min / max prices with postal code, commune, surface filters |
-| **RAG (natural language)** | **Ensues-la-Redonne houses only** — postal code **13820** (`df_2020_2025_houses_ensues.csv` + Chroma index) | Semantic Q&A (“cheap houses”, “large villas”, themes not mapped to strict filters) |
+| **RAG (natural language)** | **Marseille houses only** — all arrondissements, INSEE **13201–13216** (`marseille_houses_dvf.csv` + Chroma index) | Semantic Q&A (“cheap houses”, “large villas”, themes not mapped to strict filters) |
 
-RAG answers only reflect whatever was indexed into `data/vectorstore_ensues/`. Structured queries run over the full France file (including Ensues rows).
+RAG answers only reflect whatever was indexed into `data/vectorstore_marseille/`. Structured queries run over the full France file (including Marseille rows).
 
 ### Setup
 
@@ -79,22 +79,22 @@ RAG answers only reflect whatever was indexed into `data/vectorstore_ensues/`. S
 
    - Path: `data/processed/df_grouped_2020_2025_france_cleaned.csv`
    - Produced by the cleaning pipeline (e.g. `notebooks/03_dvf_clean_duplicates_houses.ipynb`).
-   - Processed CSVs often store **`Code postal` as numbers** (e.g. `13820.0`). The query layer compares numerically so filters like `13820` still match.
+   - Processed CSVs often store **`Code postal` as numbers** (e.g. `13008.0`). The query layer compares numerically so filters like `13008` still match.
 
-3. **RAG mode — Ensues-only subset**
+3. **RAG mode — Marseille-only subset**
 
-   - Tabular slice: `data/processed/df_2020_2025_houses_ensues.csv`  
-     (houses in Ensues-la-Redonne / CP 13820; build via pipeline such as `notebooks/07_dvf_ensues_vector.ipynb`).
-   - Vector index (required for RAG): build into `data/vectorstore_ensues/`:
+   - Tabular slice: `data/processed/marseille_houses_dvf.csv`  
+     (houses in Marseille / all arrondissements, INSEE 13201–13216; build via `scripts/extract_marseille_houses.py`).
+   - Vector index (required for RAG): build into `data/vectorstore_marseille/`:
 
      ```bash
      export OPENAI_API_KEY=...   # required for embeddings
-     uv run python scripts/build_vectorstore.py -n 253   # full Ensues slice (~253 rows); omit -n only after confirming cost/time
+     uv run python scripts/build_vectorstore.py -n 9144   # full Marseille slice (~9,144 rows); omit -n only after confirming cost/time
      ```
 
-   The app enables RAG only if that CSV exists **and** `data/vectorstore_ensues/` contains a persisted Chroma DB (not just `.gitkeep`).
+   The app enables RAG only if that CSV exists **and** `data/vectorstore_marseille/` contains a persisted Chroma DB (not just `.gitkeep`).
 
-   If RAG answers omit prices after a code update, **rebuild** the vector store so each chunk includes parsed mutation amounts (clear `data/vectorstore_ensues/*` except dotfiles like `.gitkeep` if you use it, then run the command above). Details: `RAG_README.md`.
+   If RAG answers omit prices after a code update, **rebuild** the vector store so each chunk includes parsed mutation amounts (clear `data/vectorstore_marseille/*` except dotfiles like `.gitkeep` if you use it, then run the command above). Details: `RAG_README.md`.
 
 4. **API key**
 
@@ -113,16 +113,16 @@ Open `http://localhost:8501`.
 
 **Structured (France)**
 
-- “What is the mean price of a 100m² house in 13820 Ensues?”
+- “What is the mean price of a 100m² house in 13008 Marseille?”
 - “How many houses are in Marseille?”
 - “What is the median price of houses in Paris?”
 
-**RAG (Ensues houses only)**
+**RAG (Marseille houses only)**
 
-- “What are the most expensive houses in Ensues-la-Redonne?”
-- “Quelles sont les maisons les moins chères à Ensues?”
+- “What are the most expensive houses in Marseille?”
+- “Quelles sont les maisons les moins chères à Marseille?”
 
-Use Ensues-related wording in RAG; Paris-only questions are outside the indexed corpus.
+Use Marseille-related wording in RAG; Paris-only questions are outside the indexed corpus.
 
 ### Behaviour summary
 
