@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-French real estate mutation analysis (DVF - Demandes de Valeurs Foncières). Loads official pipe-separated DVF data from data.gouv.fr (2020-2025), cleans/aggregates it, and trains ML models (RandomForest) to predict property values and transaction duration. Current focus: house-only mutations, with specific interest in Ensues.
+French real estate mutation analysis (DVF - Demandes de Valeurs Foncières). Loads official pipe-separated DVF data from data.gouv.fr (2020-2025), cleans/aggregates it. Current focus: **generating clean Marseille house datasets** — the processed CSVs are consumed by a separate downstream project, **vision360immeuble**. A Streamlit app remains for ad-hoc structured querying of the data.
 
 ## Commands
 
@@ -15,8 +15,9 @@ uv run pytest                    # Run all tests
 uv run pytest tests/test_load.py # Run a single test file
 uv run ruff check .              # Lint
 uv run ruff format .             # Format
-uv run jupyter lab               # Launch JupyterLab for notebooks
-uv run python scripts/download_dvf_sample.py  # Download DVF data
+uv run python scripts/download_dvf_sample.py            # Download DVF data
+uv run python scripts/extract_marseille_houses.py       # Extract Marseille houses from France data
+uv run python scripts/group_marseille_house_mutations.py # Group mutations per parcel → marseille_houses_grouped.csv
 uv run streamlit run app.py      # Launch chat interface for querying DVF data
 ```
 
@@ -26,23 +27,19 @@ uv run streamlit run app.py      # Launch chat interface for querying DVF data
 src/dvf/          # Reusable Python package
   load.py         # load_dvf_raw() (pipe-sep), load_dvf_csv(), load_dvf_plus() (enriched DVF+)
   analyze.py      # summarize_mutations(), price_stats()
-  query.py        # QueryParser, QueryExecutor for natural language queries
+  query.py        # QueryParser, QueryExecutor for structured queries
 
 app.py            # Streamlit chat interface for querying DVF data
 
-notebooks/        # Sequential analysis pipeline (01-06)
-  01: Ensues house exploration
-  02: France-wide house mutations
-  03: Data cleaning & deduplication
-  04: Train/test split + RandomForest regression
-  05: Survival analysis
-  06: EDA on cleaned France dataset
+scripts/          # Data acquisition + Marseille dataset generation
+  download_dvf_sample.py             # Fetch raw DVF data
+  extract_marseille_houses.py        # France → Marseille houses slice
+  group_marseille_house_mutations.py # → data/processed/marseille_houses_grouped.csv
 
-scripts/          # Data acquisition utilities
 config/defaults.yaml  # Paths, encoding (utf-8), separator ("|")
 ```
 
-**Data pipeline**: `data/raw/*.txt` → load functions → cleaning (notebook 03) → `data/processed/*.csv` → modeling → `data/models/*.pkl` + `data/results/`
+**Data pipeline**: `data/raw/*.txt` → load functions → extract Marseille houses → group mutations per parcel → `data/processed/marseille_houses_*.csv` (consumed by vision360immeuble). See README "Marseille repeat-sales pipeline" for the staged filtering of the grouped dataset.
 
 ## Key Conventions
 

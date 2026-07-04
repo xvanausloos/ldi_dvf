@@ -6,16 +6,16 @@ from dvf.query import QueryExecutor, match_postal_code_column
 
 
 def test_match_postal_code_column_float_vs_string():
-    s = pd.Series([13820.0, 75001.0, 13820])
-    mask = match_postal_code_column(s, "13820")
+    s = pd.Series([13008.0, 75001.0, 13008])
+    mask = match_postal_code_column(s, "13008")
     assert mask.tolist() == [True, False, True]
 
 
 def test_executor_filters_float_postal_like_processed_csv():
     df = pd.DataFrame(
         {
-            "Code postal": [13820.0],
-            "Commune": ["ENSUES-LA-REDONNE"],
+            "Code postal": [13008.0],
+            "Commune": ["MARSEILLE"],
             "Type local": ["Maison"],
             "Surface reelle bati": [100.0],
             "mutations": ["[{'15/06/2024': '450000'}]"],
@@ -23,7 +23,7 @@ def test_executor_filters_float_postal_like_processed_csv():
     )
     ex = QueryExecutor(df)
     result = ex.execute(
-        {"postal_code": "13820", "commune": None, "query_type": "mean"}
+        {"postal_code": "13008", "commune": None, "query_type": "mean"}
     )
     assert result["success"] is True
     assert result["count"] == 1
@@ -32,8 +32,8 @@ def test_executor_filters_float_postal_like_processed_csv():
 def test_executor_no_rows_when_postal_mismatch():
     df = pd.DataFrame(
         {
-            "Code postal": [13820.0],
-            "Commune": ["ENSUES-LA-REDONNE"],
+            "Code postal": [13008.0],
+            "Commune": ["MARSEILLE"],
             "Type local": ["Maison"],
             "Surface reelle bati": [80.0],
             "mutations": ["[{'15/06/2024': '300000'}]"],

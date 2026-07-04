@@ -13,12 +13,6 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from dvf.query import QueryExecutor, QueryParser
 
-try:
-    from dvf.rag import DVFVectorStore, DVFRAGSystem
-    RAG_AVAILABLE = True
-except ImportError:
-    RAG_AVAILABLE = False
-
 # Load .env from project root
 project_root = Path(__file__).parent
 env_path = project_root / ".env"
@@ -27,8 +21,6 @@ load_dotenv(dotenv_path=env_path)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-if not RAG_AVAILABLE:
-    logger.warning("RAG system not available. Install chromadb: uv add chromadb")
 
 # Verify API key is loaded
 if os.getenv("OPENAI_API_KEY"):
@@ -37,7 +29,6 @@ else:
     logger.warning("OPENAI_API_KEY not found in environment")
 
 DATA_PATH = Path(__file__).parent / "data" / "processed" / "df_grouped_2020_2025_france_cleaned.csv"
-RAG_DATA_PATH = Path(__file__).parent / "data" / "processed" / "df_2020_2025_houses_ensues.csv"
 
 FOOTER_CREDIT = "Xavier VAN AUSLOOS, La Donnée Intelligente, April 2026"
 
@@ -50,14 +41,6 @@ def load_data():
         st.stop()
     df = pd.read_csv(DATA_PATH, low_memory=False)
     return df
-
-
-@st.cache_data
-def load_rag_data():
-    """Load Ensues-only dataset for RAG (natural language queries)."""
-    if not RAG_DATA_PATH.exists():
-        return None
-    return pd.read_csv(RAG_DATA_PATH, low_memory=False)
 
 
 def format_result(result: dict) -> str:
@@ -106,57 +89,12 @@ def main():
             st.session_state.executor = QueryExecutor(st.session_state.df)
             st.session_state.parser = QueryParser(use_llm=True, df=st.session_state.df)
 
-            # Initialize RAG system if available (uses Ensues-only dataset)
-            if RAG_AVAILABLE:
-                df_ensues = load_rag_data()
-                vectorstore_path = project_root / "data" / "vectorstore_ensues"
-                if df_ensues is not None and vectorstore_path.exists() and any(vectorstore_path.iterdir()):
-                    try:
-                        st.session_state.vector_store = DVFVectorStore(
-                            persist_directory=str(vectorstore_path)
-                        )
-                        st.session_state.rag_system = DVFRAGSystem(
-                            st.session_state.vector_store,
-                            df_ensues,
-                        )
-                        st.session_state.rag_available = True
-                        st.session_state.rag_df = df_ensues
-                    except Exception as e:
-                        logger.warning(f"Failed to initialize RAG system: {e}")
-                        st.session_state.rag_available = False
-                else:
-                    st.session_state.rag_available = False
-            else:
-                st.session_state.rag_available = False
-
     with st.sidebar:
         st.header("⚙️ Controls")
         if st.button("🗑️ Clear Chat History", use_container_width=True, type="secondary"):
             st.session_state.messages = []
             st.session_state.pending_query = None
             st.rerun()
-
-        st.divider()
-
-        st.header("🔍 Query Mode")
-        query_mode = st.radio(
-            "Select query mode",
-            ["Structured Query", "RAG (Natural Language)"],
-            index=0,
-            help="Structured Query: Extract parameters and filter data. RAG: Natural language Q&A with semantic search.",
-        )
-
-        use_rag = query_mode == "RAG (Natural Language)"
-
-        if use_rag and not st.session_state.get("rag_available", False):
-            st.error(
-                "⚠️ RAG mode requires the Ensues vector store. "
-                "Run: `uv run python scripts/build_vectorstore.py` (builds from "
-                "df_2020_2025_houses_ensues.csv → data/vectorstore_ensues/)"
-            )
-            use_rag = False
-        if use_rag:
-            st.caption("📌 RAG interroge uniquement les maisons d'Ensues (13820).")
 
         st.divider()
 
@@ -177,8 +115,6 @@ def main():
             model = "gpt-4o-mini"
 
         if use_llm:
-            import os
-
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
                 st.warning(
@@ -207,20 +143,12 @@ def main():
         st.divider()
 
         st.header("💡 Example Queries")
-        if use_rag:
-            examples = [
-                "What are the most expensive houses in Ensues-la-Redonne?",
-                "Quelles sont les maisons les moins chères à Ensues?",
-                "Montre-moi des maisons autour de 100 m² à Ensues",
-                "Combien coûte en moyenne une grande maison à Ensues?",
-            ]
-        else:
-            examples = [
-                "What is the mean price of a 100m² house in 13820 Ensues?",
-                "How many houses are in Marseille?",
-                "What is the median price of houses in Paris?",
-                "What is the average price of a 80m² house in 75001?",
-            ]
+        examples = [
+            "What is the mean price of a 100m² house in 13008 Marseille?",
+            "How many houses are in Marseille?",
+            "What is the median price of houses in Paris?",
+            "What is the average price of a 80m² house in 75001?",
+        ]
         for example in examples:
             if st.button(example, key=f"example_{hash(example)}", use_container_width=True):
                 st.session_state.pending_query = example
@@ -229,15 +157,11 @@ def main():
         st.divider()
 
         st.header("📊 Dataset Info")
-        if use_rag and st.session_state.get("rag_df") is not None:
-            st.caption("RAG: maisons Ensues uniquement")
-            st.metric("Properties (Ensues)", f"{len(st.session_state.rag_df):,}")
-        else:
-            st.metric("Total Properties", f"{len(st.session_state.df):,}")
-            st.metric(
-                "With Price Data",
-                f"{st.session_state.df['mutations'].notna().sum():,}",
-            )
+        st.metric("Total Properties", f"{len(st.session_state.df):,}")
+        st.metric(
+            "With Price Data",
+            f"{st.session_state.df['mutations'].notna().sum():,}",
+        )
 
     if "parser" in st.session_state:
         current_use_llm = getattr(st.session_state.parser, "use_llm", False)
@@ -269,65 +193,35 @@ def main():
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            if use_rag and st.session_state.get("rag_available", False):
-                # RAG mode
-                with st.spinner("🔍 Searching properties and generating answer..."):
-                    rag_result = st.session_state.rag_system.query(
-                        prompt,
-                        language="auto",
-                        max_results=10
-                    )
+            with st.spinner("Analyzing your query..."):
+                response, result, params, sql_query, used_llm = process_query(
+                    prompt, st.session_state.executor, st.session_state.parser
+                )
 
-                    st.success("🤖 Answered using RAG (Retrieval-Augmented Generation)")
-                    st.markdown(rag_result["answer"])
+                # Show LLM usage indicator
+                if used_llm:
+                    st.success("🤖 Parsed using LLM")
+                else:
+                    st.info("📝 Parsed using regex (LLM unavailable or disabled)")
 
-                    if rag_result.get("sources"):
-                        with st.expander(f"📚 Sources ({len(rag_result['sources'])} properties)"):
-                            for i, source in enumerate(rag_result["sources"][:5], 1):
-                                st.markdown(f"**Property {i}:**")
-                                st.text(source["document"])
-                                if source.get("metadata"):
-                                    st.caption(f"Commune: {source['metadata'].get('commune', 'N/A')}, "
-                                               f"Postal Code: {source['metadata'].get('postal_code', 'N/A')}")
-                                st.divider()
+                st.markdown(response)
 
-                    message_to_add = {
-                        "role": "assistant",
-                        "content": rag_result["answer"],
-                        "mode": "rag",
-                        "sources_count": len(rag_result.get("sources", [])),
-                    }
-            else:
-                # Structured query mode
-                with st.spinner("Analyzing your query..."):
-                    response, result, params, sql_query, used_llm = process_query(
-                        prompt, st.session_state.executor, st.session_state.parser
-                    )
-
-                    # Show LLM usage indicator
-                    if used_llm:
-                        st.success("🤖 Parsed using LLM")
-                    else:
-                        st.info("📝 Parsed using regex (LLM unavailable or disabled)")
-
-                    st.markdown(response)
-
-                    if result.get("success"):
-                        with st.expander("📋 Query details"):
-                            st.json(params)
-                            if used_llm:
-                                st.caption("✅ Parsed with LLM")
-                            else:
-                                st.caption("⚠️ Parsed with regex fallback")
-
-                        with st.expander("🗄️ SQL Query"):
-                            st.code(sql_query, language="sql")
-
-                message_to_add = {"role": "assistant", "content": response, "mode": "structured"}
                 if result.get("success"):
-                    message_to_add["query_details"] = params
-                    message_to_add["sql_query"] = sql_query
-                    message_to_add["used_llm"] = used_llm
+                    with st.expander("📋 Query details"):
+                        st.json(params)
+                        if used_llm:
+                            st.caption("✅ Parsed with LLM")
+                        else:
+                            st.caption("⚠️ Parsed with regex fallback")
+
+                    with st.expander("🗄️ SQL Query"):
+                        st.code(sql_query, language="sql")
+
+            message_to_add = {"role": "assistant", "content": response, "mode": "structured"}
+            if result.get("success"):
+                message_to_add["query_details"] = params
+                message_to_add["sql_query"] = sql_query
+                message_to_add["used_llm"] = used_llm
 
             st.session_state.messages.append(message_to_add)
             st.rerun()

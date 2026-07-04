@@ -76,8 +76,6 @@ def extract_commune(text: str) -> str | None:
     """Extract commune name from text (case-insensitive)."""
     text_lower = text.lower()
     common_communes = [
-        "ensues",
-        "ensues la redonne",
         "marseille",
         "paris",
         "lyon",
@@ -91,8 +89,6 @@ def extract_commune(text: str) -> str | None:
     ]
     for commune in common_communes:
         if commune in text_lower:
-            if commune == "ensues":
-                return "Ensues"
             return commune.title()
     return None
 
@@ -134,7 +130,7 @@ def generate_dataset_semantic_layer(df: pd.DataFrame) -> str:
     # Key columns description
     columns_info = {
         "Code postal": "French postal code (5 digits, e.g., '13820', '75001')",
-        "Commune": "City/commune name (e.g., 'Ensues', 'Paris', 'Marseille')",
+        "Commune": "City/commune name (e.g., 'Marseille', 'Paris', 'Lyon')",
         "Type local": "Property type - filter for 'Maison' (house) only",
         "Surface reelle bati": "Built surface area in square meters (numeric)",
         "mutations": "Serialized list of transactions with dates and prices",
@@ -230,20 +226,20 @@ class QueryParser:
 
 Extract the following information from user queries:
 - postal_code: French postal code (5 digits) if mentioned, otherwise null
-- commune: Commune name (e.g., "Paris", "Marseille", "Ensues") if mentioned, otherwise null
+- commune: Commune name (e.g., "Paris", "Marseille", "Lyon") if mentioned, otherwise null
 - surface: Surface area in square meters if mentioned (extract the number), otherwise null
 - query_type: One of "mean", "median", "count", "min", "max" based on the query intent
 
 Return ONLY valid JSON in this exact format:
 {
-  "postal_code": "13820" or null,
-  "commune": "Ensues" or null,
+  "postal_code": "13008" or null,
+  "commune": "Marseille" or null,
   "surface": 100.0 or null,
   "query_type": "mean"
 }
 
 Examples:
-- "What is the mean price of a 100m² house in 13820 Ensues?" -> {"postal_code": "13820", "commune": "Ensues", "surface": 100.0, "query_type": "mean"}
+- "What is the mean price of a 100m² house in 13008 Marseille?" -> {"postal_code": "13008", "commune": "Marseille", "surface": 100.0, "query_type": "mean"}
 - "How many houses are in Marseille?" -> {"postal_code": null, "commune": "Marseille", "surface": null, "query_type": "count"}
 - "What is the median price of houses in Paris?" -> {"postal_code": null, "commune": "Paris", "surface": null, "query_type": "median"}
 - "What is the average price of a 80m² house in 75001?" -> {"postal_code": "75001", "commune": null, "surface": 80.0, "query_type": "mean"}
