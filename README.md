@@ -1,6 +1,6 @@
 # DVF Data Analysis
 
-Data science project for analyzing **DVF** (Demandes de Valeurs Foncières) data — French open data on real estate mutations (sales, etc.) from notarial deeds.
+Data pipeline for building clean **Marseille house datasets** from **DVF** (Demandes de Valeurs Foncières) data — French open data on real estate mutations (sales, etc.) from notarial deeds. The processed CSVs it produces are consumed by a separate downstream project, **vision360immeuble**. A Streamlit app is included for ad-hoc structured querying of the data.
 
 - **Official DVF**: [data.gouv.fr – Demandes de valeurs foncières](https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/)
 - **DVF+** (enriched, geolocated): [data.gouv.fr – DVF+ open-data](https://www.data.gouv.fr/fr/datasets/dvf-open-data/)
@@ -21,7 +21,7 @@ uv sync --extra dev --extra geo
 
 - **First run**: UV creates `.venv` and `uv.lock`.
 - **Activate** (optional): `source .venv/bin/activate` (Unix) or `.venv\Scripts\activate` (Windows).
-- **Run without activating**: `uv run python script.py` or `uv run jupyter lab`.
+- **Run without activating**: `uv run python script.py`.
 
 ## Project layout
 
@@ -29,9 +29,8 @@ uv sync --extra dev --extra geo
 ldi_dvf/
 ├── data/
 │   ├── raw/          # DVF / DVF+ files (.txt, .csv) — place downloads here
-│   └── processed/    # Cleaned / aggregated outputs
-├── notebooks/        # Jupyter notebooks for exploration
-├── scripts/          # One-off scripts (download, pipelines)
+│   └── processed/    # Cleaned / aggregated outputs (Marseille datasets)
+├── scripts/          # Data download + Marseille dataset generation
 ├── src/
 │   └── dvf/          # Package: load, analyze, query
 ├── app.py            # Streamlit chat interface
@@ -54,52 +53,38 @@ ldi_dvf/
    summary = summarize_mutations(df)
    ```
 
-3. **Notebooks**: From the **project root**, run `uv run jupyter lab` and open `notebooks/`. The notebook adds the project `src` to the path so `dvf` is found whether the kernel cwd is the project root or the `notebooks/` folder.
+3. **Generate the Marseille dataset**: From the **project root**, run the scripts in order:
+   ```bash
+   uv run python scripts/extract_marseille_houses.py        # France → Marseille houses slice
+   uv run python scripts/group_marseille_house_mutations.py # → data/processed/marseille_houses_grouped.csv
+   ```
+   The grouped CSV is the entry point of the [Marseille repeat-sales pipeline](#marseille-repeat-sales-pipeline) and the dataset consumed by **vision360immeuble**.
 
 ## Chat interface (Streamlit)
 
-The Streamlit app (`app.py`) offers two sidebar modes:
-
-| Mode | Data scope | Typical use |
-|------|----------------|-------------|
-| **Structured query** | France-wide grouped houses (`df_grouped_2020_2025_france_cleaned.csv`) | Count / mean / median / min / max prices with postal code, commune, surface filters |
-| **RAG (natural language)** | **Ensues-la-Redonne houses only** — postal code **13820** (`df_2020_2025_houses_ensues.csv` + Chroma index) | Semantic Q&A (“cheap houses”, “large villas”, themes not mapped to strict filters) |
-
-RAG answers only reflect whatever was indexed into `data/vectorstore_ensues/`. Structured queries run over the full France file (including Ensues rows).
+The Streamlit app (`app.py`) runs **structured queries** over the France-wide grouped houses
+(`df_grouped_2020_2025_france_cleaned.csv`): count / mean / median / min / max prices with
+postal-code, commune, and surface filters (Marseille rows included). Query parsing uses an LLM
+when `OPENAI_API_KEY` is set, and falls back to regex otherwise.
 
 ### Setup
 
-1. **Dependencies** (includes Streamlit, OpenAI, ChromaDB):
+1. **Dependencies** (includes Streamlit and OpenAI):
 
    ```bash
    uv sync
    ```
 
-2. **Structured mode — France dataset**
+2. **Dataset**
 
    - Path: `data/processed/df_grouped_2020_2025_france_cleaned.csv`
-   - Produced by the cleaning pipeline (e.g. `notebooks/03_dvf_clean_duplicates_houses.ipynb`).
-   - Processed CSVs often store **`Code postal` as numbers** (e.g. `13820.0`). The query layer compares numerically so filters like `13820` still match.
+   - Produced by the cleaning/grouping pipeline.
+   - Processed CSVs often store **`Code postal` as numbers** (e.g. `13008.0`). The query layer compares numerically so filters like `13008` still match.
 
-3. **RAG mode — Ensues-only subset**
-
-   - Tabular slice: `data/processed/df_2020_2025_houses_ensues.csv`  
-     (houses in Ensues-la-Redonne / CP 13820; build via pipeline such as `notebooks/07_dvf_ensues_vector.ipynb`).
-   - Vector index (required for RAG): build into `data/vectorstore_ensues/`:
-
-     ```bash
-     export OPENAI_API_KEY=...   # required for embeddings
-     uv run python scripts/build_vectorstore.py -n 253   # full Ensues slice (~253 rows); omit -n only after confirming cost/time
-     ```
-
-   The app enables RAG only if that CSV exists **and** `data/vectorstore_ensues/` contains a persisted Chroma DB (not just `.gitkeep`).
-
-   If RAG answers omit prices after a code update, **rebuild** the vector store so each chunk includes parsed mutation amounts (clear `data/vectorstore_ensues/*` except dotfiles like `.gitkeep` if you use it, then run the command above). Details: `RAG_README.md`.
-
-4. **API key**
+3. **API key**
 
    - Set `OPENAI_API_KEY` in the environment or project-root `.env` (see `.env.example`).
-   - Used for: optional structured-query parsing (LLM), RAG embeddings + generation. Without a key, structured mode falls back to regex parsing; RAG stays disabled until embeddings have been built (they still required a key at build time).
+   - Used for optional LLM-powered query parsing. Without a key, parsing falls back to regex.
 
 ### Run
 
@@ -111,24 +96,43 @@ Open `http://localhost:8501`.
 
 ### Example prompts
 
-**Structured (France)**
-
-- “What is the mean price of a 100m² house in 13820 Ensues?”
+- “What is the mean price of a 100m² house in 13008 Marseille?”
 - “How many houses are in Marseille?”
 - “What is the median price of houses in Paris?”
 
-**RAG (Ensues houses only)**
-
-- “What are the most expensive houses in Ensues-la-Redonne?”
-- “Quelles sont les maisons les moins chères à Ensues?”
-
-Use Ensues-related wording in RAG; Paris-only questions are outside the indexed corpus.
-
 ### Behaviour summary
 
-Structured mode extracts **postal code**, **commune** (substring match on official commune labels), **surface** (±10%), and **query type** (mean, median, count, min, max). Results include counts, aggregates, average €/m² and average surface where prices exist.
+The app extracts **postal code**, **commune** (substring match on official commune labels), **surface** (±10%), and **query type** (mean, median, count, min, max). Results include counts, aggregates, average €/m² and average surface where prices exist.
 
-More detail on RAG indexing and troubleshooting: `RAG_README.md`.
+## Marseille repeat-sales pipeline
+
+A staged filtering pipeline that narrows the raw Marseille house data down to a clean
+repeat-sales dataset suitable for modelling property-price appreciation. Each stage is a
+CSV in `data/processed/`, progressively stricter:
+
+| # | File | Rows | What it contains |
+|---|------|------|------------------|
+| 1 | `marseille_houses_grouped.csv` | 7,464 parcels | **Source.** One row per cadastral parcel/address; each row holds a JSON list of that parcel's mutations (8,426 total, 2020–2025, all 16 arrondissements). |
+| 2 | `marseille_houses_multi_mutations.csv` | 542 | Parcels with **>1 mutation**. |
+| 3 | `marseille_houses_repeat_sales.csv` | 494 units | Same parcel **+ same `surface_reelle_bati`**, sold ≥2×. Splits multi-unit residences by surface, but identical-floorplan units still collide. |
+| 4 | `marseille_houses_true_repeat_sales.csv` | 288 dwellings | **Strict single dwelling:** exactly one surface across all mutations, `Vente` only, 2–3 sales, ≥180 days between consecutive sales, positive prices. Isolates one physical house resold over time. |
+| 5 | `marseille_houses_repeat_sales_model_ready.csv` | 235 dwellings | **Model-ready.** Stage 4 + outlier trim: annualized appreciation within a robust IQR band (≈[−30%, +59%]/yr) and €/m² within the 1st–99th percentile on both sales. Removes data-entry errors and land-assembly/renovation jumps. |
+
+**Why the stages matter:** the high mutation counts at stages 2–3 are residences /
+co-ownerships (many units share one parcel), *not* one house resold dozens of times —
+varying (or coincidentally identical) surfaces give them away. Stages 4–5 enforce a
+genuine single-dwelling repeat-sale so price changes reflect real appreciation. After the
+trim, median appreciation is **~10%/yr** with realistic €/m² — economically sensible for
+Marseille 2020–2025.
+
+**Model-ready columns:** parcel/address identifiers, `surface_reelle_bati`, `n_sales`,
+`first_date`/`last_date`, `min_gap_days`, `years`, `first_price`/`last_price`,
+`ppm2_first`/`ppm2_last`, `pct_change` (total), `ann_pct` (annualized), and the raw
+`mutations` JSON.
+
+**Caveat:** 235 pairs is small for RandomForest. Use this file when the target is
+per-dwelling **price appreciation** (`ann_pct`); for absolute-price prediction prefer the
+larger cross-sectional France dataset.
 
 ## Commands
 
@@ -138,7 +142,8 @@ More detail on RAG indexing and troubleshooting: `RAG_README.md`.
 | `uv add <pkg>` | Add a dependency |
 | `uv run python script.py` | Run script in project env |
 | `uv run pytest` | Run tests |
-| `uv run jupyter lab` | Start Jupyter Lab |
+| `uv run python scripts/extract_marseille_houses.py` | Build the Marseille houses slice |
+| `uv run python scripts/group_marseille_house_mutations.py` | Group mutations → `marseille_houses_grouped.csv` |
 | `uv run streamlit run app.py` | Launch the chat interface |
 
 ## Licence
