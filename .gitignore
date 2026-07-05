@@ -14,7 +14,7 @@ build/
 
 # Data: ignore all data/ contents, keep .gitkeep files
 data/raw/*
-data/processed/*
+
 data/models/*
 data/results/*
 data/vectorstore/
