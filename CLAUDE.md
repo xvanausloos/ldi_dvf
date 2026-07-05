@@ -18,6 +18,7 @@ uv run ruff format .             # Format
 uv run python scripts/download_dvf_sample.py            # Download DVF data
 uv run python scripts/extract_marseille_houses.py       # Extract Marseille houses from France data
 uv run python scripts/group_marseille_house_mutations.py # Group mutations per parcel → marseille_houses_grouped.csv
+uv run python scripts/enrich_repeat_sales_dataset.py     # Add code_postal, id_parcelle, adresse to model-ready CSV
 uv run streamlit run app.py      # Launch chat interface for querying DVF data
 ```
 

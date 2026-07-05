@@ -130,6 +130,18 @@ Marseille 2020–2025.
 `ppm2_first`/`ppm2_last`, `pct_change` (total), `ann_pct` (annualized), and the raw
 `mutations` JSON.
 
+**Locating / cross-check fields** (added by `scripts/enrich_repeat_sales_dataset.py`,
+which joins the raw DVF back onto stage 5) let you verify each sale on the official
+[explorer](https://explore.data.gouv.fr/fr/immobilier):
+
+| Column | Example | Use |
+|--------|---------|-----|
+| `code_postal` | `13010` | postal code to type in the map search |
+| `adresse` | `28 RUE DE POLOGNE, 13010 MARSEILLE 10EME` | ready-to-paste full address |
+| `prefixe_section` | `856` | cadastral section prefix (significant for Marseille) |
+| `id_parcelle` | `132108560C0038` | 14-char cadastral parcel id = `code_commune(5)+prefixe(3)+section(2)+no_plan(4)`, the key used by DVF géolocalisé |
+| `btq` | `B` | bis/ter/quater on the street number, if any |
+
 **Caveat:** 235 pairs is small for RandomForest. Use this file when the target is
 per-dwelling **price appreciation** (`ann_pct`); for absolute-price prediction prefer the
 larger cross-sectional France dataset.
