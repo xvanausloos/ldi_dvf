@@ -53,12 +53,13 @@ ldi_dvf/
    summary = summarize_mutations(df)
    ```
 
-3. **Generate the Marseille dataset**: From the **project root**, run the scripts in order:
+3. **Generate the Marseille dataset**: From the **project root**, run:
    ```bash
-   uv run python scripts/extract_marseille_houses.py        # France → Marseille houses slice
-   uv run python scripts/group_marseille_house_mutations.py # → data/processed/marseille_houses_grouped.csv
+   uv run python scripts/build_marseille_houses_sold_on_date.py               # default 15/09/2025
+   uv run python scripts/build_marseille_houses_sold_on_date.py --date 15/09/2025
    ```
-   The grouped CSV is the entry point of the [Marseille repeat-sales pipeline](#marseille-repeat-sales-pipeline) and the dataset consumed by **vision360immeuble**.
+   This produces `data/processed/marseille_houses_sold_<YYYY-MM-DD>.csv`, the dataset consumed
+   by **vision360immeuble**. See [Marseille houses-sold dataset](#marseille-houses-sold-dataset).
 
 ## Chat interface (Streamlit)
 
@@ -104,47 +105,40 @@ Open `http://localhost:8501`.
 
 The app extracts **postal code**, **commune** (substring match on official commune labels), **surface** (±10%), and **query type** (mean, median, count, min, max). Results include counts, aggregates, average €/m² and average surface where prices exist.
 
-## Marseille repeat-sales pipeline
+## Marseille houses-sold dataset
 
-A staged filtering pipeline that narrows the raw Marseille house data down to a clean
-repeat-sales dataset suitable for modelling property-price appreciation. Each stage is a
-CSV in `data/processed/`, progressively stricter:
+`scripts/build_marseille_houses_sold_on_date.py` builds one dataset: **every house (Maison)
+sold in Marseille on a target date** (default **15/09/2025**), enriched with the prior sale
+history of each house's cadastral parcel.
 
-| # | File | Rows | What it contains |
-|---|------|------|------------------|
-| 1 | `marseille_houses_grouped.csv` | 7,464 parcels | **Source.** One row per cadastral parcel/address; each row holds a JSON list of that parcel's mutations (8,426 total, 2020–2025, all 16 arrondissements). |
-| 2 | `marseille_houses_multi_mutations.csv` | 542 | Parcels with **>1 mutation**. |
-| 3 | `marseille_houses_repeat_sales.csv` | 494 units | Same parcel **+ same `surface_reelle_bati`**, sold ≥2×. Splits multi-unit residences by surface, but identical-floorplan units still collide. |
-| 4 | `marseille_houses_true_repeat_sales.csv` | 288 dwellings | **Strict single dwelling:** exactly one surface across all mutations, `Vente` only, 2–3 sales, ≥180 days between consecutive sales, positive prices. Isolates one physical house resold over time. |
-| 5 | `marseille_houses_repeat_sales_model_ready.csv` | 235 dwellings | **Model-ready.** Stage 4 + outlier trim: annualized appreciation within a robust IQR band (≈[−30%, +59%]/yr) and €/m² within the 1st–99th percentile on both sales. Removes data-entry errors and land-assembly/renovation jumps. |
+- **Primary rows** come from a single file, `data/raw/ValeursFoncieres-2025.txt`: Marseille
+  arrondissements (INSEE 13201–13216) × `Code type local == 1` (Maison) × `Date mutation == target`.
+- **All 43 raw DVF columns are kept verbatim** (nothing dropped) — one row per house sold.
+- **History** is added by scanning **all** `data/raw/ValeursFoncieres-*.txt` (2020–2025) for
+  earlier mutations of the same parcel, stored as a JSON string in `previous_mutations`.
+- **Date** is configurable: `--date dd/mm/YYYY` (default `15/09/2025`).
+- **Output**: `data/processed/marseille_houses_sold_<YYYY-MM-DD>.csv` — consumed by **vision360immeuble**.
 
-**Why the stages matter:** the high mutation counts at stages 2–3 are residences /
-co-ownerships (many units share one parcel), *not* one house resold dozens of times —
-varying (or coincidentally identical) surfaces give them away. Stages 4–5 enforce a
-genuine single-dwelling repeat-sale so price changes reflect real appreciation. After the
-trim, median appreciation is **~10%/yr** with realistic €/m² — economically sensible for
-Marseille 2020–2025.
+"Same house" = unique cadastral parcel `insee_code + Prefixe de section + Section + No plan`.
+A multi-lot sale (several raw rows for one parcel on the target date) keeps its first row and
+logs a NOTE.
 
-**Model-ready columns:** parcel/address identifiers, `surface_reelle_bati`, `n_sales`,
-`first_date`/`last_date`, `min_gap_days`, `years`, `first_price`/`last_price`,
-`ppm2_first`/`ppm2_last`, `pct_change` (total), `ann_pct` (annualized), and the raw
-`mutations` JSON.
+**Columns** = all 43 raw DVF fields (`Date mutation`, `Nature mutation`, `Valeur fonciere`,
+`No voie`, `B/T/Q`, `Type de voie`, `Code voie`, `Voie`, `Code postal`, `Commune`,
+`Code departement`, `Code commune`, `Prefixe de section`, `Section`, `No plan`, lot/Carrez
+columns, `Nombre de lots`, `Code/Type local`, `Surface reelle bati`, `Nombre pieces
+principales`, `Nature culture`, `Surface terrain`, …) **plus 5 derived columns**:
 
-**Locating / cross-check fields** (added by `scripts/enrich_repeat_sales_dataset.py`,
-which joins the raw DVF back onto stage 5) let you verify each sale on the official
-[explorer](https://explore.data.gouv.fr/fr/immobilier):
+| Derived column | Example | Notes |
+|--------|---------|-------|
+| `insee_code` | `13207` | `13` + `Code commune` |
+| `adresse` | `130 RUE DU VALLON DES AUFFES, 13007 MARSEILLE 7EME` | ready-to-paste full address |
+| `id_parcelle` | `132078300A0013` | 14-char id = `code_commune(5)+prefixe(3)+section(2)+no_plan(4)`, key used by DVF géolocalisé |
+| `n_previous_mutations` | `1` | count of earlier sales of the parcel |
+| `previous_mutations` | `[{"date_mutation": "2025-05-12", "nature_mutation": "Vente", "valeur_fonciere": 525000.0, "surface_reelle_bati": 83.0}]` | JSON history (date, nature, price, surface), chronological |
 
-| Column | Example | Use |
-|--------|---------|-----|
-| `code_postal` | `13010` | postal code to type in the map search |
-| `adresse` | `28 RUE DE POLOGNE, 13010 MARSEILLE 10EME` | ready-to-paste full address |
-| `prefixe_section` | `856` | cadastral section prefix (significant for Marseille) |
-| `id_parcelle` | `132108560C0038` | 14-char cadastral parcel id = `code_commune(5)+prefixe(3)+section(2)+no_plan(4)`, the key used by DVF géolocalisé |
-| `btq` | `B` | bis/ter/quater on the street number, if any |
-
-**Caveat:** 235 pairs is small for RandomForest. Use this file when the target is
-per-dwelling **price appreciation** (`ann_pct`); for absolute-price prediction prefer the
-larger cross-sectional France dataset.
+Verify any sale on the official [explorer](https://explore.data.gouv.fr/fr/immobilier) using
+`Code postal` / `adresse` / `id_parcelle`.
 
 ## Commands
 
@@ -154,8 +148,8 @@ larger cross-sectional France dataset.
 | `uv add <pkg>` | Add a dependency |
 | `uv run python script.py` | Run script in project env |
 | `uv run pytest` | Run tests |
-| `uv run python scripts/extract_marseille_houses.py` | Build the Marseille houses slice |
-| `uv run python scripts/group_marseille_house_mutations.py` | Group mutations → `marseille_houses_grouped.csv` |
+| `uv run python scripts/build_marseille_houses_sold_on_date.py` | Build the houses-sold dataset (default 15/09/2025) |
+| `uv run python scripts/build_marseille_houses_sold_on_date.py --date 15/09/2025` | Same, for an explicit date |
 | `uv run streamlit run app.py` | Launch the chat interface |
 
 ## Licence

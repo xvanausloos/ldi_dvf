@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-French real estate mutation analysis (DVF - Demandes de Valeurs Foncières). Loads official pipe-separated DVF data from data.gouv.fr (2020-2025), cleans/aggregates it. Current focus: **generating clean Marseille house datasets** — the processed CSVs are consumed by a separate downstream project, **vision360immeuble**. A Streamlit app remains for ad-hoc structured querying of the data.
+French real estate mutation analysis (DVF - Demandes de Valeurs Foncières). Loads official pipe-separated DVF data from data.gouv.fr (2020-2025), cleans/aggregates it. Current focus: **the dataset of Marseille houses (Maison) sold on a target date** (default 15/09/2025), each enriched with the JSON prior-sale history of its cadastral parcel — the processed CSV is consumed by a separate downstream project, **vision360immeuble**. A Streamlit app remains for ad-hoc structured querying of the data.
 
 ## Commands
 
@@ -16,9 +16,8 @@ uv run pytest tests/test_load.py # Run a single test file
 uv run ruff check .              # Lint
 uv run ruff format .             # Format
 uv run python scripts/download_dvf_sample.py            # Download DVF data
-uv run python scripts/extract_marseille_houses.py       # Extract Marseille houses from France data
-uv run python scripts/group_marseille_house_mutations.py # Group mutations per parcel → marseille_houses_grouped.csv
-uv run python scripts/enrich_repeat_sales_dataset.py     # Add code_postal, id_parcelle, adresse to model-ready CSV
+uv run python scripts/build_marseille_houses_sold_on_date.py             # Build houses-sold dataset (default 15/09/2025)
+uv run python scripts/build_marseille_houses_sold_on_date.py --date 15/09/2025  # Same, explicit date
 uv run streamlit run app.py      # Launch chat interface for querying DVF data
 ```
 
@@ -33,14 +32,13 @@ src/dvf/          # Reusable Python package
 app.py            # Streamlit chat interface for querying DVF data
 
 scripts/          # Data acquisition + Marseille dataset generation
-  download_dvf_sample.py             # Fetch raw DVF data
-  extract_marseille_houses.py        # France → Marseille houses slice
-  group_marseille_house_mutations.py # → data/processed/marseille_houses_grouped.csv
+  download_dvf_sample.py                  # Fetch raw DVF data
+  build_marseille_houses_sold_on_date.py  # → data/processed/marseille_houses_sold_<date>.csv
 
 config/defaults.yaml  # Paths, encoding (utf-8), separator ("|")
 ```
 
-**Data pipeline**: `data/raw/*.txt` → load functions → extract Marseille houses → group mutations per parcel → `data/processed/marseille_houses_*.csv` (consumed by vision360immeuble). See README "Marseille repeat-sales pipeline" for the staged filtering of the grouped dataset.
+**Data pipeline**: `data/raw/ValeursFoncieres-2025.txt` → Marseille houses sold on the target date (default 15/09/2025), **all 43 raw DVF columns kept verbatim** → enriched with each parcel's prior-sale history (JSON `previous_mutations` = date/nature/price/surface, scanned across all `data/raw/ValeursFoncieres-*.txt`) + derived `insee_code`, `adresse`, `id_parcelle` → `data/processed/marseille_houses_sold_<YYYY-MM-DD>.csv` (consumed by vision360immeuble). See README "Marseille houses-sold dataset".
 
 ## Key Conventions
 
