@@ -113,30 +113,32 @@ history of each house's cadastral parcel.
 
 - **Primary rows** come from a single file, `data/raw/ValeursFoncieres-2025.txt`: Marseille
   arrondissements (INSEE 13201–13216) × `Code type local == 1` (Maison) × `Date mutation == target`.
+- **All 43 raw DVF columns are kept verbatim** (nothing dropped) — one row per house sold.
 - **History** is added by scanning **all** `data/raw/ValeursFoncieres-*.txt` (2020–2025) for
   earlier mutations of the same parcel, stored as a JSON string in `previous_mutations`.
 - **Date** is configurable: `--date dd/mm/YYYY` (default `15/09/2025`).
 - **Output**: `data/processed/marseille_houses_sold_<YYYY-MM-DD>.csv` — consumed by **vision360immeuble**.
 
 "Same house" = unique cadastral parcel `insee_code + Prefixe de section + Section + No plan`.
-Multiple lot rows of one sale are collapsed into a single mutation.
+A multi-lot sale (several raw rows for one parcel on the target date) keeps its first row and
+logs a NOTE.
 
-**Columns**
+**Columns** = all 43 raw DVF fields (`Date mutation`, `Nature mutation`, `Valeur fonciere`,
+`No voie`, `B/T/Q`, `Type de voie`, `Code voie`, `Voie`, `Code postal`, `Commune`,
+`Code departement`, `Code commune`, `Prefixe de section`, `Section`, `No plan`, lot/Carrez
+columns, `Nombre de lots`, `Code/Type local`, `Surface reelle bati`, `Nombre pieces
+principales`, `Nature culture`, `Surface terrain`, …) **plus 5 derived columns**:
 
-| Column | Example | Notes |
+| Derived column | Example | Notes |
 |--------|---------|-------|
-| `insee_code`, `Commune`, `code_postal` | `13207`, `MARSEILLE 7EME`, `13007` | arrondissement identity |
+| `insee_code` | `13207` | `13` + `Code commune` |
 | `adresse` | `130 RUE DU VALLON DES AUFFES, 13007 MARSEILLE 7EME` | ready-to-paste full address |
-| `prefixe_section`, `Section`, `No plan` | `830`, `A`, `13` | cadastral parcel parts |
 | `id_parcelle` | `132078300A0013` | 14-char id = `code_commune(5)+prefixe(3)+section(2)+no_plan(4)`, key used by DVF géolocalisé |
-| `No voie`, `btq`, `Type de voie`, `Voie` | `130`, ``, `RUE`, `DU VALLON DES AUFFES` | address parts |
-| `date_mutation`, `nature_mutation`, `valeur_fonciere` | `2025-09-15`, `Vente`, `725000.0` | the target-date sale |
-| `surface_reelle_bati`, `nombre_pieces_principales`, `surface_terrain` | `83.0`, `2.0`, `` | physical detail of the sale |
 | `n_previous_mutations` | `1` | count of earlier sales of the parcel |
-| `previous_mutations` | `[{"date_mutation": "2025-05-12", "valeur_fonciere": 525000.0}]` | JSON history (date + price), chronological |
+| `previous_mutations` | `[{"date_mutation": "2025-05-12", "nature_mutation": "Vente", "valeur_fonciere": 525000.0, "surface_reelle_bati": 83.0}]` | JSON history (date, nature, price, surface), chronological |
 
 Verify any sale on the official [explorer](https://explore.data.gouv.fr/fr/immobilier) using
-`code_postal` / `adresse` / `id_parcelle`.
+`Code postal` / `adresse` / `id_parcelle`.
 
 ## Commands
 

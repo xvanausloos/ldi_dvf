@@ -3,10 +3,16 @@
 Primary rows come from ONE file, `data/raw/ValeursFoncieres-2025.txt`: every
 house (Maison) sold in Marseille on the target date (default 15/09/2025).
 
-Each such house is then enriched with its `previous_mutations`: a JSON array of
-the parcel's earlier sales (date + price), found by scanning *all* the raw DVF
-year files in `data/raw/`. This gives, per house sold on the target date, the
-full prior transaction history of its cadastral parcel.
+Every raw DVF column of that sale is carried through verbatim (nothing dropped),
+and the following derived columns are appended:
+
+    insee_code           13 + Code commune (e.g. 13207)
+    adresse              ready-to-paste "<no> <btq> <type> <voie>, <cp> <commune>"
+    id_parcelle          14-char cadastral id = code_commune(5)+prefixe(3)+section(2)+plan(4)
+    n_previous_mutations count of earlier sales of the same parcel
+    previous_mutations   JSON array of earlier sales: date, nature, price, surface
+
+The history is found by scanning *all* the raw DVF year files in `data/raw/`.
 
 Marseille is NOT INSEE 13055 in DVF. Like Paris and Lyon it is recorded per
 arrondissement: Code departement=13, Code commune=201..216 (INSEE 13201..13216).
@@ -36,26 +42,8 @@ MARSEILLE_COMMUNE_CODES = {f"{c:03d}" for c in range(201, 217)}
 # Cadastral parcel identity = "same house".
 KEY = ["insee_code", "Prefixe de section", "Section", "No plan"]
 
-USE_COLS = [
-    "Date mutation",
-    "Nature mutation",
-    "Valeur fonciere",
-    "No voie",
-    "B/T/Q",
-    "Type de voie",
-    "Voie",
-    "Code postal",
-    "Commune",
-    "Code departement",
-    "Code commune",
-    "Prefixe de section",
-    "Section",
-    "No plan",
-    "Surface reelle bati",
-    "Nombre pieces principales",
-    "Surface terrain",
-    "Code type local",
-]
+# Derived columns appended after the raw ones (kept out of the "raw" block).
+DERIVED = ["insee_code", "adresse", "id_parcelle", "n_previous_mutations", "previous_mutations"]
 
 
 def to_float(x):
@@ -89,7 +77,7 @@ def clean(x) -> str:
 
 
 def norm_plan(x) -> str:
-    """No plan as a bare integer string ('38')."""
+    """No plan / No voie as a bare integer string ('38')."""
     s = clean(x)
     if s.endswith(".0"):
         s = s[:-2]
@@ -97,17 +85,17 @@ def norm_plan(x) -> str:
 
 
 def load_marseille_houses(path: Path) -> pd.DataFrame:
-    """Marseille house (Maison) rows from one raw DVF file, keyed by parcel."""
+    """All raw columns of Marseille house (Maison) rows, plus insee_code + key."""
     df = pd.read_csv(path, sep="|", encoding="utf-8", low_memory=False, dtype=str)
-    df["Code commune"] = df["Code commune"].str.zfill(3)
+    cc = df["Code commune"].str.zfill(3)
     mask = (
         (df["Code departement"] == "13")
-        & (df["Code commune"].isin(MARSEILLE_COMMUNE_CODES))
+        & (cc.isin(MARSEILLE_COMMUNE_CODES))
         & (df["Code type local"] == "1")  # Maison
     )
-    sub = df.loc[mask, [c for c in USE_COLS if c in df.columns]].copy()
-    sub["insee_code"] = "13" + sub["Code commune"]
-    for c in KEY:
+    sub = df[mask].copy()
+    sub["insee_code"] = "13" + cc[mask]
+    for c in ["Prefixe de section", "Section", "No plan"]:
         sub[c] = sub[c].fillna("").astype(str).str.strip()
     return sub
 
@@ -116,19 +104,11 @@ def collapse_sale(group: pd.DataFrame) -> dict:
     """Collapse rows of one (date, price) sale (several lots) into one mutation."""
     first = group.iloc[0]
     bati = sum(v for v in (to_float(x) for x in group["Surface reelle bati"]) if v is not None)
-    pieces = [to_float(x) for x in group["Nombre pieces principales"]]
-    pieces = [p for p in pieces if p is not None]
-    terrain = next(
-        (v for v in (to_float(x) for x in group["Surface terrain"]) if v is not None), None
-    )
     return {
         "date_mutation": to_iso(first["Date mutation"]),
         "nature_mutation": clean(first.get("Nature mutation")) or None,
         "valeur_fonciere": to_float(first["Valeur fonciere"]),
         "surface_reelle_bati": bati or None,
-        "nombre_pieces_principales": max(pieces) if pieces else None,
-        "surface_terrain": terrain,
-        "nb_lignes": len(group),
     }
 
 
@@ -143,6 +123,27 @@ def parcel_mutations(parcel: pd.DataFrame) -> list[dict]:
     return sorted(muts, key=lambda m: (m["date_mutation"] or "", m["valeur_fonciere"] or 0))
 
 
+def build_adresse(row: pd.Series) -> str:
+    parts = [
+        norm_plan(row.get("No voie")),
+        clean(row.get("B/T/Q")),
+        clean(row.get("Type de voie")),
+        clean(row.get("Voie")),
+    ]
+    street = " ".join(p for p in parts if p).strip()
+    cp = clean(row.get("Code postal"))
+    return f"{street}, {cp} {clean(row.get('Commune'))}".strip()
+
+
+def build_id_parcelle(row: pd.Series) -> str:
+    return (
+        f"{clean(row['insee_code'])}"
+        f"{clean(row['Prefixe de section']).zfill(3)}"
+        f"{clean(row['Section']).zfill(2)}"
+        f"{norm_plan(row['No plan']).zfill(4)}"
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--date", default="15/09/2025", help="Sale date dd/mm/YYYY (default 15/09/2025)")
@@ -152,8 +153,9 @@ def main() -> None:
     if target_iso is None:
         raise SystemExit(f"Invalid --date {args.date!r}; expected dd/mm/YYYY")
 
-    # 1. Houses sold on the target date, from the 2025 file only.
+    # 1. Houses sold on the target date, from the 2025 file only. Keep raw column order.
     primary = load_marseille_houses(RAW / PRIMARY_FILE)
+    raw_cols = [c for c in primary.columns if c != "insee_code"]
     sold = primary[primary["Date mutation"].map(to_iso) == target_iso]
     target_keys = set(map(tuple, sold[KEY].values.tolist()))
     print(
@@ -162,80 +164,64 @@ def main() -> None:
     if not target_keys:
         raise SystemExit("No Marseille house sold on that date.")
 
-    # 2. Every mutation of those parcels, across all raw year files.
-    files = sorted(RAW.glob("ValeursFoncieres-*.txt"))
+    # 2. Every mutation of those parcels, across all raw year files (for history).
     frames = []
-    for f in files:
+    for f in sorted(RAW.glob("ValeursFoncieres-*.txt")):
         sub = load_marseille_houses(f)
-        keep = sub[list(map(lambda r: tuple(r) in target_keys, sub[KEY].values.tolist()))]
+        keep = sub[[tuple(r) in target_keys for r in sub[KEY].values.tolist()]]
         if len(keep):
             print(f"  {f.name}: {len(keep)} rows on target parcels")
             frames.append(keep)
-    allrows = pd.concat(frames, ignore_index=True)
+    history = pd.concat(frames, ignore_index=True)
 
-    # 3. One row per house: the target-date sale + JSON history of earlier sales.
+    # 3. One row per house: the full raw target-date sale + JSON history of earlier sales.
+    hist_by_key = {
+        key: parcel_mutations(g) for key, g in history.groupby(KEY, dropna=False, sort=False)
+    }
+
     records = []
-    for key, parcel in allrows.groupby(KEY, dropna=False, sort=False):
-        muts = parcel_mutations(parcel)
-        sale = next((m for m in muts if m["date_mutation"] == target_iso), None)
-        if sale is None:
-            continue
+    for key, sale_rows in sold.groupby(KEY, dropna=False, sort=False):
+        if len(sale_rows) > 1:
+            print(
+                f"  NOTE: parcel {key} has {len(sale_rows)} raw rows on {args.date}; "
+                "keeping the first (multi-lot sale)."
+            )
+        row = sale_rows.iloc[0]
         previous = [
-            {"date_mutation": m["date_mutation"], "valeur_fonciere": m["valeur_fonciere"]}
-            for m in muts
+            {
+                "date_mutation": m["date_mutation"],
+                "nature_mutation": m["nature_mutation"],
+                "valeur_fonciere": m["valeur_fonciere"],
+                "surface_reelle_bati": m["surface_reelle_bati"],
+            }
+            for m in hist_by_key.get(key, [])
             if m["date_mutation"] and m["date_mutation"] < target_iso
         ]
-        # Address / identity from a target-date row.
-        row = parcel[parcel["Date mutation"].map(to_iso) == target_iso].iloc[0]
-        insee, prefixe, section, plan = key
-        no_voie = norm_plan(row.get("No voie"))
-        btq = clean(row.get("B/T/Q"))
-        commune = clean(row.get("Commune"))
-        street = " ".join(
-            s for s in [no_voie, btq, clean(row.get("Type de voie")), clean(row.get("Voie"))] if s
-        ).strip()
-        cp = clean(row.get("Code postal"))
-        records.append(
-            {
-                "insee_code": insee,
-                "Commune": commune,
-                "code_postal": cp,
-                "adresse": f"{street}, {cp} {commune}".strip(),
-                "prefixe_section": prefixe,
-                "Section": section,
-                "No plan": plan,
-                "id_parcelle": f"{insee}{prefixe.zfill(3)}{section.zfill(2)}{norm_plan(plan).zfill(4)}",
-                "No voie": no_voie,
-                "btq": btq,
-                "Type de voie": clean(row.get("Type de voie")),
-                "Voie": clean(row.get("Voie")),
-                "date_mutation": sale["date_mutation"],
-                "nature_mutation": sale["nature_mutation"],
-                "valeur_fonciere": sale["valeur_fonciere"],
-                "surface_reelle_bati": sale["surface_reelle_bati"],
-                "nombre_pieces_principales": sale["nombre_pieces_principales"],
-                "surface_terrain": sale["surface_terrain"],
-                "n_previous_mutations": len(previous),
-                "previous_mutations": json.dumps(previous, ensure_ascii=False),
-            }
-        )
+        rec = {c: row[c] for c in raw_cols}
+        rec["insee_code"] = row["insee_code"]
+        rec["adresse"] = build_adresse(row)
+        rec["id_parcelle"] = build_id_parcelle(row)
+        rec["n_previous_mutations"] = len(previous)
+        rec["previous_mutations"] = json.dumps(previous, ensure_ascii=False)
+        records.append(rec)
 
-    out = pd.DataFrame(records).sort_values(["insee_code", "Section", "No plan"])
+    out = pd.DataFrame(records, columns=raw_cols + DERIVED).sort_values(
+        ["insee_code", "Section", "No plan"]
+    )
     PROC.mkdir(parents=True, exist_ok=True)
     out_path = PROC / f"marseille_houses_sold_{target_iso}.csv"
     out.to_csv(out_path, index=False)
 
     print("-" * 55)
-    print(f"Houses sold on {args.date}: {len(out)}")
+    print(
+        f"Houses sold on {args.date}: {len(out)}  ({len(out.columns)} columns, all raw + derived)"
+    )
     print(f"With prior sale history: {(out['n_previous_mutations'] > 0).sum()}")
     print(f"Saved -> {out_path}")
-    print("\n--- sample ---")
+    print("\n--- sample (house with history) ---")
     s = out.iloc[out["n_previous_mutations"].values.argmax()]
     print(f"  {s['adresse']}  (id_parcelle {s['id_parcelle']})")
-    print(
-        f"  sold {s['date_mutation']} for {s['valeur_fonciere']:.0f} EUR, "
-        f"{s['surface_reelle_bati']} m2"
-    )
+    print(f"  sold {s['Date mutation']} for {s['Valeur fonciere']} EUR")
     print(f"  previous_mutations: {s['previous_mutations']}")
 
 

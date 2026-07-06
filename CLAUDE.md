@@ -38,7 +38,7 @@ scripts/          # Data acquisition + Marseille dataset generation
 config/defaults.yaml  # Paths, encoding (utf-8), separator ("|")
 ```
 
-**Data pipeline**: `data/raw/ValeursFoncieres-2025.txt` → Marseille houses sold on the target date (default 15/09/2025) → enriched with each parcel's prior-sale history (JSON `previous_mutations`, scanned across all `data/raw/ValeursFoncieres-*.txt`) → `data/processed/marseille_houses_sold_<YYYY-MM-DD>.csv` (consumed by vision360immeuble). See README "Marseille houses-sold dataset".
+**Data pipeline**: `data/raw/ValeursFoncieres-2025.txt` → Marseille houses sold on the target date (default 15/09/2025), **all 43 raw DVF columns kept verbatim** → enriched with each parcel's prior-sale history (JSON `previous_mutations` = date/nature/price/surface, scanned across all `data/raw/ValeursFoncieres-*.txt`) + derived `insee_code`, `adresse`, `id_parcelle` → `data/processed/marseille_houses_sold_<YYYY-MM-DD>.csv` (consumed by vision360immeuble). See README "Marseille houses-sold dataset".
 
 ## Key Conventions
 
